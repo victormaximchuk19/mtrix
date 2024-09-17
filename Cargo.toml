@@ -8,3 +8,7 @@ clap = { version = "4.3", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 bytes = "1"
 rand = "0.8.4"
+nokhwa = { version = "0.10.4", features = ["input-native", "output-threaded"], git = "https://github.com/kendfrey/nokhwa.git", branch = "0.10" }
+embed_plist = "1.2"
+image = "0.25.2"
+crossterm = "0.28.1"

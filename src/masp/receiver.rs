@@ -8,6 +8,46 @@ use tokio::sync::Mutex;
 
 const FINAL_ACK_TIMEOUT_SECONDS: u8 = 3;
 
+use crossterm::{execute, cursor};
+use std::io::{stdout, Write};
+
+fn move_cursor_to_top() {
+  let mut stdout = stdout();
+  execute!(stdout, cursor::MoveTo(5, 5)).unwrap();
+}
+
+fn render_frame(image: String) {
+  move_cursor_to_top();
+
+  print!("{}", image);
+
+  stdout().flush().unwrap();
+}
+
+fn decompress_ascii_image(payload: Vec<u8>) -> String {
+  let mut decompressed = String::new();
+  let mut index = 0;
+
+  while index < payload.len() {
+    let symbol_code = payload[index];      // ASCII character code or 255 for new line
+    let count = payload[index + 1];        // Repeat count
+
+    if symbol_code == u8::MAX {
+      // If the symbol is 255, insert a newline
+      decompressed.push('\n');
+    } else {
+      // Convert the symbol code to a character and repeat it `count` times
+      let character = symbol_code as char;
+      decompressed.push_str(&character.to_string().repeat(count as usize));
+    }
+
+    index += 2;
+  }
+
+  decompressed
+}
+
+#[derive(Clone)]
 pub struct MaspReceiver {
   socket: Arc<UdpSocket>,
   remote_addr: Option<SocketAddr>,
@@ -150,9 +190,11 @@ impl MaspReceiver {
       self.expected_sequence_number = sequence_number;
 
       // Process the payload
-      let text = String::from_utf8(packet.payload.clone())?;
-      println!("Received text data: {}", text);
-      
+      let decompressed = decompress_ascii_image(packet.payload.clone());
+      // let ascii_image = String::from_utf8(decompressed).unwrap();
+
+      render_frame(decompressed);
+
       // Send acknowledgment
       self.send_ack(sequence_number).await?;
     } else {
