@@ -1,23 +1,18 @@
-use bytes::buf;
-use nokhwa::{
-  pixel_format::RgbFormat, utils::{
-    CameraIndex, 
-    RequestedFormat, 
-    RequestedFormatType, Resolution
-  }, Buffer, Camera, FormatDecoder
-};
+use nokhwa::{pixel_format::RgbFormat, utils::{CameraIndex, RequestedFormat, RequestedFormatType}, Buffer, CallbackCamera};
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
+use crossbeam::channel::{self, Sender, Receiver};
+use std::thread;
+use crossterm::{execute, cursor};
+use std::io::{stdout, Write};
 
 use crate::masp::{sender::MaspSender, message::PacketType};
 
-use std::path::Path;
+const ASCII_CHARS: [&str; 13] = ["X", "@", "%", "#", "0", "O", "L", ";", ":", ".", ",", "'", " "]; // ASCII character gradient from dark to light
 
-const ASCII_CHARS: [&str; 11] = ["@", "#", "0", "O", "L", ";", ":", ".", ",", "'", " "]; // ASCII character gradient from dark to light
 const SCALED_WIDTH: u32 = 192;
-const SCALED_HEIGHT: u32 = 108;
+const SCALED_HEIGHT: u32 = 54;
 
-use crossterm::{execute, cursor};
-use std::io::{stdout, Write};
+const FRAME_RATE: u64= 1000 / 15;
 
 fn move_cursor_to_top() {
   let mut stdout = stdout();
@@ -65,12 +60,9 @@ fn compress_ascii_image(ascii_image: &str) -> Vec<u8> {
 }
 
 
-fn buffer_to_ascii(buffer: &mut Buffer) -> String {
-  let dynamic_image = DynamicImage::ImageRgb8(buffer_to_image(buffer));
-  let resized_image = dynamic_image.resize(SCALED_WIDTH, SCALED_HEIGHT, FilterType::Nearest);
-
-  resized_image.save(Path::new("resized_output_from_buffer.png")).unwrap();
-  // let grayscale_image = resized_image.to_luma8();
+fn image_to_ascii(image: image::RgbImage) -> String {
+  let dynamic_image = DynamicImage::ImageRgb8(image);
+  let resized_image = dynamic_image.resize_exact(SCALED_WIDTH, SCALED_HEIGHT, FilterType::Nearest);
 
   let mut ascii_image = String::new();
   let mut last_y = 0;
@@ -92,39 +84,46 @@ fn buffer_to_ascii(buffer: &mut Buffer) -> String {
   ascii_image
 }
 
-fn buffer_to_image(buffer: &Buffer) -> image::RgbImage {
-  let resolution = buffer.resolution();
-
-  image::RgbImage::from_raw(
-    resolution.width(), 
-    resolution.height(), 
-    buffer.buffer_bytes().to_vec()
-  ).unwrap()
+fn buffer_to_ascii (buffer: Buffer, ascii_sender: Sender<String>) {
+  thread::spawn(move || {
+    let width = buffer.resolution().width();
+    let height = buffer.resolution().height();
+  
+    let buf = buffer.decode_image::<RgbFormat>().unwrap();
+    
+    let rgb_image = image::RgbImage::from_raw(
+      width,
+      height,
+      buf.to_vec()
+    ).unwrap();
+  
+    ascii_sender.send(image_to_ascii(rgb_image)).unwrap();
+  });
 }
 
 pub async fn run(mut sender: MaspSender) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-  let mut camera = Camera::new(
+  let (frame_sender, frame_receiver) = channel::unbounded();
+  let (ascii_frame_sender, ascii_frame_receiver): (Sender<String>, Receiver<String>) = channel::unbounded();
+
+  let mut camera = CallbackCamera::new(
     CameraIndex::Index(0),
-    RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate)
-  )?;
+    RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
+    move |frame| {
+      frame_sender.send(frame).unwrap();
+    }
+  ).unwrap();
 
-  // Stascii_image capturing
-  camera.open_stream()?;
+  camera.open_stream().unwrap();
 
-  loop {
-    let mut frame = camera.frame()?;
-    let ascii_image = buffer_to_ascii(&mut frame);
+  thread::spawn(move || {
+    while let Ok(ascii_frame) = ascii_frame_receiver.recv() {
+      render_frame(&ascii_frame);
+    }
+  });
 
-    render_frame(&ascii_image);
+  while let Ok(raw_frame) = frame_receiver.recv() {
+    buffer_to_ascii(raw_frame, ascii_frame_sender.clone());
+  };
 
-    let payload = compress_ascii_image(&ascii_image);
-
-    // println!("{:?}", payload);
-    // return Ok(());
-
-    sender.send_data(PacketType::TextData, payload).await.unwrap();
-
-    // Simulate the frame rate
-    std::thread::sleep(std::time::Duration::from_millis(42));
-  }
+  Ok(())
 }
