@@ -6,8 +6,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::video::ascii_frame;
+
 const FINAL_ACK_TIMEOUT_SECONDS: u8 = 3;
 
+
+#[derive(Clone)]
 pub struct MaspReceiver {
   socket: Arc<UdpSocket>,
   remote_addr: Option<SocketAddr>,
@@ -149,10 +153,9 @@ impl MaspReceiver {
     if self.expected_sequence_number == sequence_number {
       self.expected_sequence_number = sequence_number;
 
-      // Process the payload
-      let text = String::from_utf8(packet.payload.clone())?;
-      println!("Received text data: {}", text);
-      
+      let decompressed_frame = ascii_frame::decompress_ascii_image(packet.payload.clone());
+      ascii_frame::render(&decompressed_frame);
+
       // Send acknowledgment
       self.send_ack(sequence_number).await?;
     } else {

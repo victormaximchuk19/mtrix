@@ -1,10 +1,8 @@
-use crate::handlers;
-use crate::masp::{sender::MaspSender, receiver::MaspReceiver, message::PacketType};
+use crate::cli_handlers;
 
 use std::net::SocketAddr;
 use std::str::FromStr;
 use clap::{Parser, Subcommand};
-use tokio::task;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -90,7 +88,7 @@ impl CommandHandler {
 
   /// Handles the 'whoami' command by discovering the public IP and port.
   async fn handle_whoami(&self) {
-    match handlers::whoami::run(self.cli.port, self.cli.ipv).await {
+    match cli_handlers::whoami::run(self.cli.port, self.cli.ipv).await {
       Ok(public_addr) => {
         println!("Your are {}", public_addr);
       }
@@ -100,50 +98,27 @@ impl CommandHandler {
     }
   }
 
-  /// Placeholder for the 'jackin' command functionality.
-  async fn handle_jackin(&self, address: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-    let mut masp_sender = MaspSender::new(
-      self.cli.port,
-      address
-    ).await?;
-
-    masp_sender.init_handshake().await?;
-
-    // Start acknowledgment handling in a background task
-    let ack_handler = {
-      let sender_clone = masp_sender.clone();
-      
-      task::spawn(async move {
-        sender_clone.handle_acknowledgments().await.unwrap();
-      })
-    };
-
-    // Start retransmission handling in a background task
-    let retransmitter = {
-      let sender_clone = masp_sender.clone();
-      
-      task::spawn(async move {
-        sender_clone.retransmit_unacknowledged().await;
-      })
-    };
-
-    // Send data (replace with actual data sending logic)
-    masp_sender.send_data(PacketType::TextData, b"Hello, World".to_vec()).await?;
-
-    // Wait for tasks to complete
-    ack_handler.await?;
-    retransmitter.await?;
-
-    Ok(())
+  /// Connects to the remote peer and starts communication.
+  async fn handle_jackin(&self, address: SocketAddr) {
+    match cli_handlers::jackin::run(self.cli.port, address).await {
+      Ok(_) => {
+        println!("Jacked in successfully");
+      }
+      Err(e) => {
+        eprintln!("Failed to jackin to remote peer: {}", e);
+      }
+    }
   }
 
-  /// Placeholder for the 'jackwait' command functionality.
-  async fn handle_jackwait(&self) -> Result<(), Box<dyn std::error::Error>> {
-    let mut receiver = MaspReceiver::new(self.cli.port).await?;
-
-    receiver.wait_for_handshake().await?;
-    receiver.start_receiving().await?;
-
-    Ok(())
+  /// Activates `wait` mode for other peer to jack in.
+  async fn handle_jackwait(&self) {
+    match cli_handlers::jackwait::run(self.cli.port).await {
+      Ok(_) => {
+        println!("Jacked in successfully");
+      }
+      Err(e) => {
+        eprintln!("Failed to jackin to remote peer: {}", e);
+      }
+    }
   }
 }
