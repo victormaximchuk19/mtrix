@@ -1,22 +1,20 @@
 use crate::masp::message::{MaspPacket, PacketType};
 use tokio::net::UdpSocket;
 use tokio::time::{sleep, Duration};
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, task};
 
 use crate::video::ascii_frame;
 
 const FINAL_ACK_TIMEOUT_SECONDS: u8 = 3;
-
 
 #[derive(Clone)]
 pub struct MaspReceiver {
   socket: Arc<UdpSocket>,
   remote_addr: Option<SocketAddr>,
   expected_sequence_number: u32,
-  received_packets: Arc<Mutex<HashMap<u32, MaspPacket>>>,
+  ascii_frames_buffer: Arc<Mutex<Vec<(String, u32)>>>
 }
 
 impl MaspReceiver {
@@ -31,7 +29,8 @@ impl MaspReceiver {
         socket: Arc::new(socket),
         remote_addr: None,
         expected_sequence_number: 0,
-        received_packets: Arc::new(Mutex::new(HashMap::new())),
+        ascii_frames_buffer: Arc::new(Mutex::new(Vec::<(String, u32)>::new()))
+        // received_packets: Arc::new(Mutex::new(HashMap::new())),
       }
     )
   }
@@ -108,7 +107,7 @@ impl MaspReceiver {
 
     /// Starts receiving data packets.
   pub async fn start_receiving(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buf = [0u8; 1500];
+    let mut buf = [0u8; 10000];
 
     loop {
       let (len, addr) = self.socket.recv_from(&mut buf).await?;
@@ -129,13 +128,14 @@ impl MaspReceiver {
 
       match packet.packet_type {
         PacketType::TextData => {
-          self.handle_text_data(packet).await?;
+          // Handle text data          
         }
         PacketType::AudioData => {
           // Handle audio data
         }
         PacketType::VideoData => {
-          // Handle video as text data
+          self.save_frame(packet).await?;
+          self.render_frame().await;
         }
         PacketType::HandshakeRequest | PacketType::HandshakeAck | PacketType::HandshakeFinalAck => {
           // Ignore handshake packets after establishment
@@ -147,30 +147,44 @@ impl MaspReceiver {
     }
   }
 
-  async fn handle_text_data(&mut self, packet: MaspPacket) -> Result<(), Box<dyn std::error::Error>> {
+  async fn save_frame(&mut self, packet: MaspPacket) -> Result<(), Box<dyn std::error::Error>> {
     let sequence_number = packet.sequence_number;
+    self.expected_sequence_number = sequence_number;
 
-    if self.expected_sequence_number == sequence_number {
-      self.expected_sequence_number = sequence_number;
+    let decompressed_frame = ascii_frame::decompress_ascii_image(packet.payload.clone());
+    ascii_frame::render(&decompressed_frame);
 
-      let decompressed_frame = ascii_frame::decompress_ascii_image(packet.payload.clone());
-      ascii_frame::render(&decompressed_frame);
+    let frame_data = (decompressed_frame, sequence_number);
 
-      // Send acknowledgment
-      self.send_ack(sequence_number).await?;
-    } else {
-      // Out-of-order packet received
-      println!("Received out-of-order packet: {}", sequence_number);
-      // Store for future processing
-      self.received_packets.lock().await.insert(sequence_number, packet);
-      // Request retransmission of missing packets
-      self.request_retransmission(self.expected_sequence_number).await?;
-    }
+    self.ascii_frames_buffer.lock().await.push(frame_data);
+    self.send_ack(sequence_number).await?;
 
     Ok(())
   }
 
-  async fn send_ack(&self, sequence_number: u32) -> Result<(), Box<dyn std::error::Error>> {
+  async fn render_frame(&mut self) -> () {
+    let mut locked_buf = self.ascii_frames_buffer.lock().await;
+    let mut cloned_buf = locked_buf.clone(); 
+
+    task::spawn(async move {
+      if cloned_buf.len() < 24 {
+        ()
+      }
+      
+      cloned_buf.sort_by(|prv, nxt| {
+        nxt.1.cmp(&prv.1)
+      });
+
+      let (frame, _) = cloned_buf.first().unwrap();
+      ascii_frame::render(frame);
+
+      cloned_buf.remove(0);
+    }).await.unwrap();
+
+    locked_buf.remove(0);
+  }
+
+  async fn send_ack(&self, sequence_number: u32 ) -> Result<(), Box<dyn std::error::Error>> {
     let ack_packet = MaspPacket::new(
       PacketType::Ack,
       0,
@@ -179,20 +193,6 @@ impl MaspReceiver {
     
     if let Some(addr) = self.remote_addr {
       self.send_packet(&ack_packet, &addr).await?;
-    }
-
-    Ok(())
-  }
-
-  async fn request_retransmission(&self, sequence_number: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let retrans_packet = MaspPacket::new(
-      PacketType::RetransmissionRequest,
-      0,
-      sequence_number.to_be_bytes().to_vec(),
-    );
-
-    if let Some(addr) = self.remote_addr {
-      self.send_packet(&retrans_packet, &addr).await?;
     }
 
     Ok(())

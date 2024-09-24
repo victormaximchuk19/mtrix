@@ -33,12 +33,7 @@ pub fn compress_ascii_image(ascii_image: &str) -> Vec<u8> {
     }
 
     compressed.push(current_char as u8);
-    compressed.push(count);
-    
-    if current_char == '\n' {
-      compressed.push(u8::MAX);
-      compressed.push(1); // Add a new line indicator
-    }
+    compressed.push(count as u8);
   }
 
   compressed
@@ -52,19 +47,14 @@ pub fn decompress_ascii_image(payload: Vec<u8>) -> String {
     let symbol_code = payload[index];
     let count = payload[index + 1];
 
-    if symbol_code == u8::MAX {
-      decompressed.push('\n');
-    } else {
-      let character = symbol_code as char;
-      decompressed.push_str(&character.to_string().repeat(count as usize));
-    }
+    let character = symbol_code as char;
+    decompressed.push_str(&character.to_string().repeat(count as usize));
 
     index += 2;
   }
 
   decompressed
 }
-
 
 fn yuyv_to_ascii_image(yuyv: &[u8], original_width: usize, original_height: usize) -> String {
   if yuyv.len() % 4 != 0 {
@@ -130,7 +120,6 @@ pub fn spawn_buffer_to_ascii_task (buffer: Buffer, ascii_sender: Sender<(String,
     let height = buffer.resolution().height();
     
     let buf = buffer.buffer();
-    
     let ascii_frame = yuyv_to_ascii_image(buf, width as usize, height as usize);
 
     ascii_sender.send((ascii_frame, seq_num)).unwrap();

@@ -1,10 +1,10 @@
 [package]
-name = "mxtrix"
+name = "mtrix"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.3", features = ["derive"] }
+clap = { version = "4.5.18", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 bytes = "1.7.2"
 rand = "0.8.4"
@@ -13,6 +13,5 @@ embed_plist = "1.2"
 image = "0.25.2"
 crossterm = "0.28.1"
 crossbeam = "0.8.4"
-yuvutils-rs = "0.4.6"
 yuv = "0.1.8"
 ratatui = "0.28.1"

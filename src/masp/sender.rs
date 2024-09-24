@@ -10,7 +10,7 @@ use super::message::{MaspPacket, PacketType};
 
 const MAX_HANDSHAKE_ATTEMPTS: u8 = 3;
 const HANDSHAKE_TIMEOUT_SECONDS: u8 = 3;
-const RETRANSMIT_TIMEOUT_MS: u8 = 200;
+const RETRANSMIT_TIMEOUT_MS: u8 = 100;
 
 #[derive(Clone)]
 pub struct MaspSender {
