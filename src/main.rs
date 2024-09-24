@@ -1,10 +1,12 @@
 mod cli;
-mod cli_handlers;
+mod commands;
 
 mod stun;
 mod masp;
 
 mod video;
+
+mod tests;
 
 use cli::CommandHandler;
 

@@ -12,7 +12,7 @@ const FINAL_ACK_TIMEOUT_SECONDS: u8 = 3;
 #[derive(Clone)]
 pub struct MaspReceiver {
   socket: Arc<UdpSocket>,
-  remote_addr: Option<SocketAddr>,
+  pub remote_addr: Option<SocketAddr>,
   expected_sequence_number: u32,
   ascii_frames_buffer: Arc<Mutex<Vec<(String, u32)>>>
 }
@@ -30,7 +30,6 @@ impl MaspReceiver {
         remote_addr: None,
         expected_sequence_number: 0,
         ascii_frames_buffer: Arc::new(Mutex::new(Vec::<(String, u32)>::new()))
-        // received_packets: Arc::new(Mutex::new(HashMap::new())),
       }
     )
   }
@@ -152,7 +151,6 @@ impl MaspReceiver {
     self.expected_sequence_number = sequence_number;
 
     let decompressed_frame = ascii_frame::decompress_ascii_image(packet.payload.clone());
-    ascii_frame::render(&decompressed_frame);
 
     let frame_data = (decompressed_frame, sequence_number);
 

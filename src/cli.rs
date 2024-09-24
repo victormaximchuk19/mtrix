@@ -1,4 +1,4 @@
-use crate::cli_handlers;
+use crate::commands;
 
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -88,7 +88,7 @@ impl CommandHandler {
 
   /// Handles the 'whoami' command by discovering the public IP and port.
   async fn handle_whoami(&self) {
-    match cli_handlers::whoami::run(self.cli.port, self.cli.ipv).await {
+    match commands::whoami::run(self.cli.port, self.cli.ipv).await {
       Ok(public_addr) => {
         println!("Your are {}", public_addr);
       }
@@ -100,7 +100,7 @@ impl CommandHandler {
 
   /// Connects to the remote peer and starts communication.
   async fn handle_jackin(&self, address: SocketAddr) {
-    match cli_handlers::jackin::run(self.cli.port, address).await {
+    match commands::jackin::run(self.cli.port, address).await {
       Ok(_) => {
         println!("Jacked in successfully");
       }
@@ -112,7 +112,7 @@ impl CommandHandler {
 
   /// Activates `wait` mode for other peer to jack in.
   async fn handle_jackwait(&self) {
-    match cli_handlers::jackwait::run(self.cli.port).await {
+    match commands::jackwait::run(self.cli.port).await {
       Ok(_) => {
         println!("Jacked in successfully");
       }

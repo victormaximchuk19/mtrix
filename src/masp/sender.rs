@@ -55,11 +55,10 @@ impl MaspSender {
     for attempt in 0..MAX_HANDSHAKE_ATTEMPTS {
       println!("Sending handshake attempt: {}", attempt);
 
-      let packet = MaspPacket::new(
-        PacketType::HandshakeRequest, 0, Vec::new()
-      );
-
-      self.send_packet(&packet).await?;
+      self.send_data(
+        PacketType::HandshakeRequest, 
+        Vec::new()
+      ).await?;
 
       match self.receive_handshake_ack(timeout).await {
         Ok(_) => {
@@ -67,9 +66,9 @@ impl MaspSender {
 
           // Send final acknowledgment
           let ack_packet = MaspPacket::new(
-              PacketType::HandshakeFinalAck,
-              self.sequence_number,
-              Vec::new()
+            PacketType::HandshakeFinalAck,
+            self.sequence_number,
+            Vec::new()
           );
           
           self.send_packet(&ack_packet).await?;
@@ -129,7 +128,7 @@ impl MaspSender {
       let packets = self.unacknowledged_packets.lock().await.clone();
       
       for packet in packets.values() {
-        println!("Retransmitting packet with sequence number {}", packet.sequence_number);
+        // println!("Retransmitting packet with sequence number {}", packet.sequence_number);
         
         let _ = self.send_packet(packet).await;
       }
