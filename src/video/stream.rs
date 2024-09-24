@@ -53,7 +53,6 @@ pub async fn run(mut sender: MaspSender) -> Result<(), Box<dyn std::error::Error
       let compressed_frame = ascii_frame::compress_ascii_image(&frame.clone());
 
       sender.send_data(PacketType::VideoData, compressed_frame).await.unwrap();
-
       locked_buffer_clone.remove(0);
     }
   });
