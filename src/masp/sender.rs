@@ -52,22 +52,37 @@ impl MaspSender {
 
   /// Sends empty packets to punch UDP hole.
   pub async fn punch_hole(&mut self, remote_reciever_port: u16, remote_sender_port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    let mut local_addr = self.socket.local_addr().unwrap();
+    let local_port = local_addr.port();
+
+    // first is the port of the local RECIEVER, 
+    // secong is the port of local SENDER
+    // RECIEVER PORT always equals SENDER PORT - 1
+    let local_ports = [local_port - 1, local_port];
     let remote_ports = [remote_reciever_port, remote_sender_port];
-    // pre-save remote address
+    
+    // pre-save local/remote address
+    let original_local_addr = local_addr.clone();
     let original_remote_addr = self.remote_addr.clone();
 
-    for port in remote_ports {
-      for _ in 0..HOLE_PUNCHES_COUNT {
-        self.remote_addr.set_port(port);
+    for remote_p in remote_ports {
+      self.remote_addr.set_port(remote_p);
+      
+      for local_p in local_ports {
+        local_addr.set_port(local_p);
 
-        self.send_data(PacketType::Punch, Vec::new()).await?;
-  
-        sleep(Duration::from_millis(HOLE_PUNCH_DELAY_MS as u64)).await;
+        for _ in 0..HOLE_PUNCHES_COUNT {
+          self.send_data(PacketType::Punch, Vec::new()).await?;
+    
+          sleep(Duration::from_millis(HOLE_PUNCH_DELAY_MS as u64)).await;
+        }
       }
     }
 
-    // reset remote address to the provided one
+    // reset remote/local address to the initial ones
     self.remote_addr = original_remote_addr;
+    local_addr.set_ip(original_local_addr.ip());
+    local_addr.set_port(original_local_addr.port());
 
     Ok(())
   } 
