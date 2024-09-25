@@ -121,7 +121,7 @@ impl CommandHandler {
         println!("Jacked in successfully");
       }
       Err(e) => {
-        eprintln!("Failed to jackin to remote peer: {}", e);
+        eprintln!("Failed to jackwait to remote peer: {}", e);
       }
     }
   }

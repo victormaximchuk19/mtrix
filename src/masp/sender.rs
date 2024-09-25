@@ -8,8 +8,8 @@ use tokio::sync::Mutex;
 
 use super::message::{MaspPacket, PacketType};
 
-const MAX_HANDSHAKE_ATTEMPTS: u8 = 3;
-const HANDSHAKE_TIMEOUT_SECONDS: u8 = 3;
+const MAX_HANDSHAKE_ATTEMPTS: u8 = 5;
+const HANDSHAKE_TIMEOUT_SECONDS: u8 = 10;
 const RETRANSMIT_TIMEOUT_MS: u8 = 100;
 
 const HOLE_PUNCHES_COUNT: u8 = 10;
@@ -52,37 +52,41 @@ impl MaspSender {
 
   /// Sends empty packets to punch UDP hole.
   pub async fn punch_hole(&mut self, remote_reciever_port: u16, remote_sender_port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    let mut local_addr = self.socket.local_addr().unwrap();
+    let local_addr = self.socket.local_addr().unwrap();
     let local_port = local_addr.port();
 
     // first is the port of the local RECIEVER, 
     // secong is the port of local SENDER
     // RECIEVER PORT always equals SENDER PORT - 1
-    let local_ports = [local_port - 1, local_port];
-    let remote_ports = [remote_reciever_port, remote_sender_port];
+    let ports = [
+      (local_port - 1, remote_reciever_port), 
+      (local_port, remote_sender_port)
+    ];
     
     // pre-save local/remote address
-    let original_local_addr = local_addr.clone();
+    // let original_local_addr = local_addr.clone();
     let original_remote_addr = self.remote_addr.clone();
 
-    for remote_p in remote_ports {
+    for (local_p, remote_p) in ports {
       self.remote_addr.set_port(remote_p);
-      
-      for local_p in local_ports {
-        local_addr.set_port(local_p);
+      println!("SENDING PUNCH TO {}", self.remote_addr);
 
-        for _ in 0..HOLE_PUNCHES_COUNT {
-          self.send_data(PacketType::Punch, Vec::new()).await?;
-    
-          sleep(Duration::from_millis(HOLE_PUNCH_DELAY_MS as u64)).await;
-        }
+      let mut la = self.socket.local_addr().unwrap(); 
+      la.set_port(local_p);
+
+      self.socket = Arc::new(UdpSocket::bind(la).await.unwrap());
+      println!("SENDING PUNCH FROM {}", self.socket.local_addr().unwrap());
+
+      for _ in 0..HOLE_PUNCHES_COUNT {
+        self.send_data(PacketType::Punch, Vec::new()).await?;
+  
+        sleep(Duration::from_millis(HOLE_PUNCH_DELAY_MS as u64)).await;
       }
     }
 
     // reset remote/local address to the initial ones
     self.remote_addr = original_remote_addr;
-    local_addr.set_ip(original_local_addr.ip());
-    local_addr.set_port(original_local_addr.port());
+    // self.socket = Arc::new(UdpSocket::bind(original_local_addr).await.unwrap());
 
     Ok(())
   } 
@@ -116,10 +120,10 @@ impl MaspSender {
           return Ok(());
         }
         Err(e) => {
-          println!("Handshake attempt {} failed: {}", attempt, e);
+          println!("Handshake attempt {} failed: {}", attempt + 1, e);
 
           if attempt == (MAX_HANDSHAKE_ATTEMPTS - 1) {
-            return Err("Handshake failed after 3 attempts".into());
+            return Err("Handshake failed after {MAX_HANDSHAKE_ATTEMPTS} attempts".into());
           }
         }
       }
