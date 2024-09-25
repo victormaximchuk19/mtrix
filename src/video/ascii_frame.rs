@@ -7,8 +7,8 @@ use std::io::{self, Write, Cursor};
 
 const ASCII_CHARS: [&str; 11] = ["@", "#", "0", "O", "*", ";", ":", ".", ",", "'", " "];
 
-const DESCALE_FACTOR_X: f32 = 10.0;
-const DESCALE_FACTOR_Y: f32 = DESCALE_FACTOR_X * 2.0;
+const ASCII_FRAME_WIDTH: usize = 192;
+const ASCII_FRAME_HEIGHT: usize = 54;
 
 pub fn render(ascii_frame: &String) {
   print!("\x1B[2J\x1B[1;1H");
@@ -56,14 +56,14 @@ pub fn decompress_ascii_image(payload: Vec<u8>) -> String {
   decompressed
 }
 
-fn build_ascii_from_grayscale (grayscaled: Vec<u8>, width: usize) -> String {
+fn build_ascii_from_grayscale (grayscaled: Vec<u8>) -> String {
   let mut ascii_image = String::with_capacity(grayscaled.len());
 
   for (i, &gray) in grayscaled.iter().enumerate() {
     let ascii_index = (gray as usize * (ASCII_CHARS.len() - 1)) / 255;
     ascii_image.push_str(ASCII_CHARS[ascii_index]);
 
-    if (i + 1) % width == 0 {
+    if (i + 1) % ASCII_FRAME_WIDTH == 0 {
       ascii_image.push('\n');
     }
   }
@@ -71,30 +71,40 @@ fn build_ascii_from_grayscale (grayscaled: Vec<u8>, width: usize) -> String {
   ascii_image
 }
 
-pub fn jpeg_to_ascii_image(jpeg: &[u8], original_width: usize, original_height: usize) -> String {
-  let descaled_width = (original_width as f32 / DESCALE_FACTOR_X) as u32;
-  let descaled_height = (original_height as f32 / DESCALE_FACTOR_Y) as u32;
-
+pub fn jpeg_to_ascii_image(jpeg: &[u8]) -> String {
   let image_buf = image::load(Cursor::new(jpeg), ImageFormat::Jpeg)
     .unwrap()
     .resize_exact(
-      descaled_width, 
-      descaled_height, 
+      ASCII_FRAME_WIDTH as u32, 
+      ASCII_FRAME_HEIGHT as u32, 
       image::imageops::FilterType::Nearest
     )
     .to_luma8()
     .to_vec();
 
-  build_ascii_from_grayscale(image_buf, descaled_width as usize)
+  build_ascii_from_grayscale(image_buf)
 }
 
 pub fn yuv_to_ascii_image(yuv: &[u8], original_width: usize, original_height: usize) -> String {
-  let is_yuv_422 = (original_height * original_width * 2) == yuv.len();
-  let is_yuv_444 = (original_height * original_width * 3) == yuv.len();
-  let is_yuv_420 = ((original_height * original_width) as f32 * 1.5) as usize == yuv.len();
+  let yuv_444_size = original_height * original_width * 3;
+  let yuv_422_size = original_height * original_width * 2;
+  let yuv_420_size = ((original_height * original_width) as f32 * 1.5) as usize;
+
+  let is_yuv_444 = yuv_444_size == yuv.len();
+  let is_yuv_422 = yuv_422_size == yuv.len();
+  let is_yuv_420 = yuv_420_size == yuv.len();
 
   if !is_yuv_444 && !is_yuv_422 && !is_yuv_420 {
-    panic!("Usupported YUV format.");
+    panic!("
+      ERROR: Usupported YUV format. 
+      Expected file size to equal one of YUV sizes: 
+
+      YUV 4:4:4 {yuv_444_size}, 
+      YUV 4:2:2 {yuv_422_size}, 
+      YUV 4:2:0 {yuv_420_size}.
+
+      Recieved size: {}
+    ", yuv.len());
   }
 
   let mut grayscale_values = Vec::<u8>::new();
@@ -113,16 +123,16 @@ pub fn yuv_to_ascii_image(yuv: &[u8], original_width: usize, original_height: us
     }
   }
 
-  let new_width = original_width / DESCALE_FACTOR_X as usize;
-  let new_height = original_height / DESCALE_FACTOR_Y as usize;
+  // let new_width = original_width / DESCALE_FACTOR_X as usize;
+  // let new_height = original_height / DESCALE_FACTOR_Y as usize;
 
-  let mut downscaled_grayscale = Vec::with_capacity(new_width * new_height);
+  let mut downscaled_grayscale = Vec::with_capacity(ASCII_FRAME_WIDTH * ASCII_FRAME_HEIGHT);
   
-  let block_width = original_width / new_width;
-  let block_height = original_height / new_height;
+  let block_width = original_width / ASCII_FRAME_WIDTH;
+  let block_height = original_height / ASCII_FRAME_HEIGHT;
 
-  for y in 0..new_height {
-    for x in 0..new_width {
+  for y in 0..ASCII_FRAME_HEIGHT {
+    for x in 0..ASCII_FRAME_WIDTH {
       let mut sum: usize = 0;
       let mut count = 0;
 
@@ -142,7 +152,7 @@ pub fn yuv_to_ascii_image(yuv: &[u8], original_width: usize, original_height: us
     }
   }
 
-  build_ascii_from_grayscale(downscaled_grayscale, new_width)
+  build_ascii_from_grayscale(downscaled_grayscale)
 }
 
 pub fn spawn_buffer_to_ascii_task (buffer: Buffer, ascii_sender: Sender<(String, u128)>, seq_num: u128) {
@@ -153,7 +163,7 @@ pub fn spawn_buffer_to_ascii_task (buffer: Buffer, ascii_sender: Sender<(String,
     let buf = buffer.buffer();
     let ascii_frame = match buffer.source_frame_format() {
       FrameFormat::YUYV => yuv_to_ascii_image(buf, width as usize, height as usize),
-      FrameFormat::MJPEG => jpeg_to_ascii_image(buf, width as usize, height as usize),
+      FrameFormat::MJPEG => jpeg_to_ascii_image(buf),
       _ => {
         println!("ERROR: unsupported frame format: {}", buffer.source_frame_format());
 

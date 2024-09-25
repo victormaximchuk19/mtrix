@@ -51,7 +51,11 @@ pub enum Commands {
     },
 
     /// Makes the client go online and wait for incoming connections
-    Jackwait,
+    Jackwait {
+      /// The IP address and port to connect to (format: ip:port)
+      #[arg(value_parser = parse_socket_addr)]
+      address: std::net::SocketAddr,
+  },
 }
 
 /// Custom parser for SocketAddr to provide better error messages
@@ -80,8 +84,8 @@ impl CommandHandler {
       Commands::Jackin { address } => {
         let _ = Self::handle_jackin(&self, *address).await;
       }
-      Commands::Jackwait => {
-        let _ = Self::handle_jackwait(&self).await;
+      Commands::Jackwait { address } => {
+        let _ = Self::handle_jackwait(&self, *address).await;
       }
     }
   }
@@ -111,8 +115,8 @@ impl CommandHandler {
   }
 
   /// Activates `wait` mode for other peer to jack in.
-  async fn handle_jackwait(&self) {
-    match commands::jackwait::run(self.cli.port).await {
+  async fn handle_jackwait(&self, address: SocketAddr) {
+    match commands::jackwait::run(self.cli.port, address).await {
       Ok(_) => {
         println!("Jacked in successfully");
       }
