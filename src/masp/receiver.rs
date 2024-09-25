@@ -18,16 +18,13 @@ pub struct MaspReceiver {
 }
 
 impl MaspReceiver {
-  pub async fn new(port: u16) -> Result<Self, Box<dyn std::error::Error>> {
-    let local_addr_str = "0.0.0.0";
-    let local_addr = SocketAddr::new(local_addr_str.parse()?, port);
-
-    let socket = UdpSocket::bind(local_addr).await?;
-
+  pub async fn new (local_addr: SocketAddr, remote_addr: Option<SocketAddr>) -> Result<Self, Box<dyn std::error::Error>> {
+    let local_socket = UdpSocket::bind(local_addr).await?;
+    
     Ok(
       MaspReceiver {
-        socket: Arc::new(socket),
-        remote_addr: None,
+        socket: Arc::new(local_socket),
+        remote_addr,
         expected_sequence_number: 0,
         ascii_frames_buffer: Arc::new(Mutex::new(Vec::<(String, u32)>::new()))
       }
@@ -124,6 +121,7 @@ impl MaspReceiver {
       };
 
       self.expected_sequence_number = self.expected_sequence_number.wrapping_add(1);
+      self.send_ack(packet.sequence_number).await?;
 
       match packet.packet_type {
         PacketType::TextData => {
@@ -148,14 +146,11 @@ impl MaspReceiver {
 
   async fn save_frame(&mut self, packet: MaspPacket) -> Result<(), Box<dyn std::error::Error>> {
     let sequence_number = packet.sequence_number;
-    self.expected_sequence_number = sequence_number;
-
     let decompressed_frame = ascii_frame::decompress_ascii_image(packet.payload.clone());
 
     let frame_data = (decompressed_frame, sequence_number);
 
     self.ascii_frames_buffer.lock().await.push(frame_data);
-    self.send_ack(sequence_number).await?;
 
     Ok(())
   }

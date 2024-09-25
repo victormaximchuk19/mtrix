@@ -12,24 +12,24 @@ const MAX_HANDSHAKE_ATTEMPTS: u8 = 3;
 const HANDSHAKE_TIMEOUT_SECONDS: u8 = 3;
 const RETRANSMIT_TIMEOUT_MS: u8 = 100;
 
+const HOLE_PUNCHES_COUNT: u8 = 10;
+const HOLE_PUNCH_DELAY_MS: u8 = 5;
+
 #[derive(Clone)]
 pub struct MaspSender {
   socket: Arc<UdpSocket>,
-  remote_addr: SocketAddr,
+  pub remote_addr: SocketAddr,
   sequence_number: u32,
   unacknowledged_packets: Arc<Mutex<HashMap<u32, MaspPacket>>>
 }
 
 impl MaspSender {
-  pub async fn new (port: u16, remote_addr: SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
-    let local_addr_str = "0.0.0.0";
-    let local_addr = SocketAddr::new(local_addr_str.parse()?, port);
-
-    let socket = UdpSocket::bind(local_addr).await?;
+  pub async fn new (local_addr: SocketAddr, remote_addr: SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+    let local_socket = UdpSocket::bind(local_addr).await?;
 
     Ok(
       MaspSender {
-        socket: Arc::new(socket),
+        socket: Arc::new(local_socket),
         remote_addr,
         sequence_number: 0,
         unacknowledged_packets: Arc::new(Mutex::new(HashMap::new()))
@@ -44,10 +44,33 @@ impl MaspSender {
     let packet = MaspPacket::new(packet_type, self.sequence_number, payload);
 
     self.send_packet(&packet).await?;
+
     self.unacknowledged_packets.lock().await.insert(self.sequence_number, packet);
 
     Ok(())
   }
+
+  /// Sends empty packets to punch UDP hole.
+  pub async fn punch_hole(&mut self, remote_reciever_port: u16, remote_sender_port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    let remote_ports = [remote_reciever_port, remote_sender_port];
+    // pre-save remote address
+    let original_remote_addr = self.remote_addr.clone();
+
+    for port in remote_ports {
+      for _ in 0..HOLE_PUNCHES_COUNT {
+        self.remote_addr.set_port(port);
+
+        self.send_data(PacketType::Punch, Vec::new()).await?;
+  
+        sleep(Duration::from_millis(HOLE_PUNCH_DELAY_MS as u64)).await;
+      }
+    }
+
+    // reset remote address to the provided one
+    self.remote_addr = original_remote_addr;
+
+    Ok(())
+  } 
 
   pub async fn init_handshake(&mut self) -> Result<(), Box<dyn std::error::Error>> {
     let timeout = Duration::from_secs(HANDSHAKE_TIMEOUT_SECONDS as u64);

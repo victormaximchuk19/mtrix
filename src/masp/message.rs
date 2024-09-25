@@ -13,7 +13,8 @@ pub enum PacketType {
   AudioData = 0x20,
   VideoData = 0x30,
   Ack = 0x40,
-  RetransmissionRequest = 0x50
+  RetransmissionRequest = 0x50,
+  Punch = 0x60
 }
 
 impl TryFrom<u8> for PacketType {
@@ -29,6 +30,7 @@ impl TryFrom<u8> for PacketType {
       0x30 => Ok(PacketType::VideoData),
       0x40 => Ok(PacketType::Ack),
       0x50 => Ok(PacketType::RetransmissionRequest),
+      0x60 => Ok(PacketType::Punch),
       _ => Err("Invalid packet type"),
     }
   }
